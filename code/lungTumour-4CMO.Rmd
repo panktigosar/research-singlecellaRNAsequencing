@@ -1,0 +1,395 @@
+---
+title: "lungTumour-4CMO"
+author: "Pankti"
+date: "2023-09-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This code is written for practice of data analyses of single cell sequencing data.
+
+# Data
+
+This data is taken from [10X genomics](https://www.10xgenomics.com/resources/datasets?query=&page=1&configure%5BhitsPerPage%5D=50&configure%5BmaxValuesPerFacet%5D=1000) website. This dataset consists of four dissociated lung tumours namely Lung cancer, Squamous cell carcinoma, Adenocarcinoma, and NSCLC. More information about this dataset can be found [here](https://www.10xgenomics.com/resources/datasets/30-k-sorted-dtc-multiplexed-4-cm-os-and-stained-with-a-panel-of-total-seq-b-antibodies-3-1-standard-6-0-0). The code is adapted from the [Seurat - Guided Clustering Tutorial](https://satijalab.org/seurat/articles/pbmc3k_tutorial.html) which goes through the basic pre-processing of the single cell RNA sequencing data followed by clustering.
+
+Installing the libraries
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+# setwd("~/Desktop/Bioinformatics/github/research-singlecellaRNAsequencing/code")
+library(Seurat)
+library(tidyverse)
+```
+
+Loading the data set
+
+```{r}
+lc.sparse.m <- Read10X_h5(filename = "../data/SC3_v3_NextGem_DI_CellPlex_CSP_DTC_Sorted_30K_Multiplex_count_raw_feature_bc_matrix.h5")
+str(lc.sparse.m)
+counts <- lc.sparse.m$`Gene Expression`
+```
+
+# Initialize Seurat Object
+
+The data used here is raw (not normalized).
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj <- CreateSeuratObject(counts = counts, project = "Lung Cancer", min.cells = 3, min.features = 200)
+str(lcanSeuratObj)
+lcanSeuratObj1 <- CreateSeuratObject(counts = counts, project = "Lung Cancer", min.cells = 3, min.features = 200)
+str(lcanSeuratObj1)
+```
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj
+```
+
+# Processing
+
+Before we perform any statistical analyses on the data, we need to pre-process the data. The steps for doing so are as follows:
+
+# 1. Quality Control
+
+\% Mitochondrial reads: In dying cells, we see a higher percentage of mitochondrial gene contamination. Therefore we use this feature to remove the reads that came from dying cell data.
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj[["percent.mt"]] <- PercentageFeatureSet(lcanSeuratObj, pattern = "^MT-")
+# View(lcanSeuratObj@meta.data)
+VlnPlot(lcanSeuratObj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+In the first plot we see a significant number of cells having different number of genes and is spread over a spectrum. We can see from the second plot that there are many cells from which a high number of reads were detected. In third plot we also see a high number of cells where high activity of mitochondrial genes was detected. These cells will be filtered out as they are not of good quality.
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+FeatureScatter(lcanSeuratObj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +
+  geom_smooth(method = "lm")
+```
+
+Here we see most of the cells follow the trend line. We don't many cells that have multiple copies of same transcripts as we do not see many cells in lower right corner. We also don't have cells were many genes are caught but not sequenced enough as we don't see any cells in top left corner. From this graph, we can safely infer that overall, our data is of good quality. We will still filter out cells whose mitochondrial gene expression is detected above 5%.
+
+# 2. Filtering
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj <- subset(lcanSeuratObj, subset = nFeature_RNA > 225 & nFeature_RNA < 2500
+                        & percent.mt < 5)
+lcanSeuratObj
+```
+
+# 3. Normalizing data
+
+Here we normalization method used is LogNormalize where Feature counts for each cell are divided by the total counts for that cell and multiplied by the scale factor. This is then natural-log transformed using log1p. The scale factor is 10000.
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj <- NormalizeData(lcanSeuratObj)
+# The normalization used here is standard. However parameters can be changed as below.
+# lcanSeuratObj <- NormalizeData(lcanSeuratObj, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+# Identifying highly variable features:
+
+Here we select the features that have high variation from cell to cell. These genes are expressed highly in some cells and lowly in others. These are our genes of interest for downstream analyses and help to point to biological signals in single cell data sets.
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj <- FindVariableFeatures(lcanSeuratObj, selection.method = "vst", nfeatures = 2000)
+```
+
+Identifying 10 most highly variable genes
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+top10 <- head(VariableFeatures(lcanSeuratObj), 10)
+
+top10
+```
+
+These are the top 10 genes.
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+plot1 <- VariableFeaturePlot(lcanSeuratObj)
+LabelPoints(plot = plot1, points = top10, repel = T)
+```
+
+Here is a visualization of the variable features where the top 10 most variable genes are highlighted.
+
+# 5. Scaling
+
+Scaling helps to remove unwanted variation from data that can be because of technical noise like batch effects or from biological sources such as different stages in cell cycle. After scaling we can have the genes clustering because of actual biological similarities and differences.
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+all.genes <- rownames(lcanSeuratObj)
+lcanSeuratObj <- ScaleData(lcanSeuratObj, features = all.genes)
+
+str(lcanSeuratObj)
+```
+
+# 6. Perform Linear Dimensionality reduction
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj <- RunPCA(lcanSeuratObj, features = VariableFeatures(object = lcanSeuratObj))
+
+# Visualize PCA results
+print(lcanSeuratObj[['pca']], dims = 1:5, nfeatures = 5)
+```
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+VizDimLoadings(lcanSeuratObj, dims = 1:2, reduction = "pca")
+```
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+DimPlot(lcanSeuratObj, reduction = "pca")
+```
+
+```{r,  echo = T, warning=FALSE, message=FALSE, fig.height=15, fig.width=8}
+DimHeatmap(lcanSeuratObj, dims = 1:15, cells = 500, balanced = T)
+```
+In this heatmap, we can see which features have maximum heterogeneity. Focussing on those genes in downstream process gives us a maximum sense of biological activity happening. Here we gave command to plot the 500 cells based on the PCA scores. The algorithm plots the readings with highest and lowest scores. We do see maximum of heterogeneity in PC2, PC3 and PC5; and minimum heterogeneity in PC13, PC14, and PC15.
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+# DoHeatmap(
+#   lcanSeuratObj,
+#   features = all.genes,
+#   cells = 500,
+#   group.by = "ident",
+#   group.bar = TRUE,
+#   disp.min = -2.5,
+#   slot = "scale.data",
+#   label = TRUE,
+#   size = 5.5,
+#   hjust = 0,
+#   angle = 45,
+#   raster = TRUE,
+#   draw.lines = TRUE,
+#   group.bar.height = 0.02,
+#   combine = TRUE
+# )
+```
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+ElbowPlot(lcanSeuratObj)
+```
+
+This is an elbow plot. Here the the elbowing is seen at 6 which means that we can get most relevant heterogeneity in the first 6 PCAs and the rest are not worth investigating further. For this parameter, it is advisable to err on higher end as not doing so adversely affects the downstream results.
+
+# 7. Clustering
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj <- FindNeighbors(lcanSeuratObj, dims = 1:15)
+# View(lcanSeuratObj@meta.data)
+lcanSeuratObjclust <- FindClusters(lcanSeuratObj, resolution = c(0.1, 0.3, 0.5, 0.7, 1.0))
+View(lcanSeuratObjclust@meta.data)
+
+DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.0.1", label = T)
+```
+
+Here we see the similar cells clustering together. As the resolution increases, we get more clusters, and better defination of each cluster. 
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.0.3", label = T)
+```
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.0.5", label = T)
+```
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.0.7", label = T)
+```
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.1", label = T)
+```
+
+Setting Identity of clusters
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+Idents(lcanSeuratObjclust)
+Idents(lcanSeuratObjclust) <- "RNA_snn_res.0.1"
+# Idents(lcanSeuratObjclust)
+```
+
+# Non Linear Dimensionality Reduction
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObjclust <- RunUMAP(lcanSeuratObjclust, dims = 1:15)
+DimPlot(lcanSeuratObjclust, reduction = "umap")
+```
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+# saveRDS(lcanSeuratObjclust, file = "../output/lungTumour-4CMO.rds")
+```
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+# pheatmap(lcanSeuratObj) 
+# The goal here is to cluster the cells based on cancer type
+```
+
+# Finding Differentially Expressed Features (Cluster Biomarkers)
+Finding all the markers of cluster 2:
+```{r,  echo = T, warning=FALSE, message=FALSE}
+cluster2.markers <- FindMarkers(lcanSeuratObjclust, ident.1 = 2, min.pct = 0.25)
+head(cluster2.markers, n=5)
+```
+
+Finding markers of every cluster compared to all remaining cells reporting only the positive ones. 
+```{r,  echo = T, warning=FALSE, message=FALSE}
+lcan.markers <- FindAllMarkers(lcanSeuratObjclust, only.pos = T, min.pct = 0.25, 
+                               logfc.threshold = 0.25)
+lcan.markers %>% 
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
+
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+
+```
+
