@@ -1,3 +1,3 @@
-# research-template
 
-This template can be used to store various analysis. Different folders are used to store specific files. This section can be used to share information about the analysis such as source of data, pre processing methods and results. 
+
+This repository contanins data analyses from Single cell RNA sequencing experiments. The data, codes and reports are stored in seperate sub-repositories of the same name and the source of data for each analyses is mentioned in the reports. This repository was created to learn and understand the complexities of scRNA-seq data analyses. 
