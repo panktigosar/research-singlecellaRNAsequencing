@@ -3,10 +3,14 @@ title: "lungTumour-4CMO"
 author: "Pankti"
 date: "2023-09-25"
 output: html_document
+  outout_dir: "../output/"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_chunk$set(echo = TRUE)
+# knit_input <- "lungTumour-4CMO.Rmd"
+# knit_output <- "../output/lungTumour-4CMO.html"
+# knitr::knit(knit_input, knit_output)
 ```
 
 This code is written for practice of data analyses of single cell sequencing data.
@@ -17,15 +21,15 @@ This data is taken from [10X genomics](https://www.10xgenomics.com/resources/dat
 
 Installing the libraries
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
-# setwd("~/Desktop/Bioinformatics/github/research-singlecellaRNAsequencing/code")
+```{r, Installinglibraries, echo = T, warning=FALSE, message=FALSE}
+setwd("~/Desktop/Bioinformatics/github/research-singlecellaRNAsequencing/code/")
 library(Seurat)
 library(tidyverse)
 ```
 
 Loading the data set
 
-```{r}
+```{r, Loadingdataset}
 lc.sparse.m <- Read10X_h5(filename = "../data/SC3_v3_NextGem_DI_CellPlex_CSP_DTC_Sorted_30K_Multiplex_count_raw_feature_bc_matrix.h5")
 str(lc.sparse.m)
 counts <- lc.sparse.m$`Gene Expression`
@@ -35,14 +39,14 @@ counts <- lc.sparse.m$`Gene Expression`
 
 The data used here is raw (not normalized).
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r, Initialize-Seurat-Object, echo = T, warning=FALSE, message=FALSE}
 lcanSeuratObj <- CreateSeuratObject(counts = counts, project = "Lung Cancer", min.cells = 3, min.features = 200)
 str(lcanSeuratObj)
-lcanSeuratObj1 <- CreateSeuratObject(counts = counts, project = "Lung Cancer", min.cells = 3, min.features = 200)
-str(lcanSeuratObj1)
+# lcanSeuratObj1 <- CreateSeuratObject(counts = counts, project = "Lung Cancer", min.cells = 3, min.features = 200)
+# str(lcanSeuratObj1)
 ```
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r, View-Seurat-Object, echo = T, warning=FALSE, message=FALSE}
 lcanSeuratObj
 ```
 
@@ -54,7 +58,7 @@ Before we perform any statistical analyses on the data, we need to pre-process t
 
 \% Mitochondrial reads: In dying cells, we see a higher percentage of mitochondrial gene contamination. Therefore we use this feature to remove the reads that came from dying cell data.
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r,  Quality-Control, echo = T, warning=FALSE, message=FALSE}
 lcanSeuratObj[["percent.mt"]] <- PercentageFeatureSet(lcanSeuratObj, pattern = "^MT-")
 # View(lcanSeuratObj@meta.data)
 VlnPlot(lcanSeuratObj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
@@ -71,8 +75,8 @@ Here we see most of the cells follow the trend line. We don't many cells that ha
 
 # 2. Filtering
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
-lcanSeuratObj <- subset(lcanSeuratObj, subset = nFeature_RNA > 225 & nFeature_RNA < 2500
+```{r, Filtering, echo = T, warning=FALSE, message=FALSE}
+lcanSeuratObj <- subset(lcanSeuratObj, subset = nFeature_RNA > 235 & nFeature_RNA < 2500
                         & percent.mt < 5)
 lcanSeuratObj
 ```
@@ -81,7 +85,7 @@ lcanSeuratObj
 
 Here we normalization method used is LogNormalize where Feature counts for each cell are divided by the total counts for that cell and multiplied by the scale factor. This is then natural-log transformed using log1p. The scale factor is 10000.
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r, Normalizing-data, echo = T, warning=FALSE, message=FALSE}
 lcanSeuratObj <- NormalizeData(lcanSeuratObj)
 # The normalization used here is standard. However parameters can be changed as below.
 # lcanSeuratObj <- NormalizeData(lcanSeuratObj, normalization.method = "LogNormalize", scale.factor = 10000)
@@ -91,13 +95,13 @@ lcanSeuratObj <- NormalizeData(lcanSeuratObj)
 
 Here we select the features that have high variation from cell to cell. These genes are expressed highly in some cells and lowly in others. These are our genes of interest for downstream analyses and help to point to biological signals in single cell data sets.
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r,  Identifying-highly-variable-features, echo = T, warning=FALSE, message=FALSE}
 lcanSeuratObj <- FindVariableFeatures(lcanSeuratObj, selection.method = "vst", nfeatures = 2000)
 ```
 
 Identifying 10 most highly variable genes
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r, 10-most-highly-variable-genes, echo = T, warning=FALSE, message=FALSE}
 top10 <- head(VariableFeatures(lcanSeuratObj), 10)
 
 top10
@@ -105,7 +109,7 @@ top10
 
 These are the top 10 genes.
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r, top-10, echo = T, warning=FALSE, message=FALSE}
 plot1 <- VariableFeaturePlot(lcanSeuratObj)
 LabelPoints(plot = plot1, points = top10, repel = T)
 ```
@@ -116,35 +120,37 @@ Here is a visualization of the variable features where the top 10 most variable 
 
 Scaling helps to remove unwanted variation from data that can be because of technical noise like batch effects or from biological sources such as different stages in cell cycle. After scaling we can have the genes clustering because of actual biological similarities and differences.
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r, Scaling, echo = T, warning=FALSE, message=FALSE}
 all.genes <- rownames(lcanSeuratObj)
-lcanSeuratObj <- ScaleData(lcanSeuratObj, features = all.genes)
+lcanSeuratObj <- ScaleData(lcanSeuratObj, features = VariableFeatures(lcanSeuratObj))
 
 str(lcanSeuratObj)
 ```
 
 # 6. Perform Linear Dimensionality reduction
-
-```{r,  echo = T, warning=FALSE, message=FALSE}
+```{r, Linear-Dimensionality-reduction, echo = T, warning=FALSE, message=FALSE}
 lcanSeuratObj <- RunPCA(lcanSeuratObj, features = VariableFeatures(object = lcanSeuratObj))
 
 # Visualize PCA results
 print(lcanSeuratObj[['pca']], dims = 1:5, nfeatures = 5)
 ```
-
-```{r,  echo = T, warning=FALSE, message=FALSE}
+# Visualization dot plot
+```{r,  dot-plot, echo = T, warning=FALSE, message=FALSE}
 VizDimLoadings(lcanSeuratObj, dims = 1:2, reduction = "pca")
 ```
 
-```{r,  echo = T, warning=FALSE, message=FALSE}
+# Dimplot
+
+```{r, Dimplot,  echo = T, warning=FALSE, message=FALSE}
 DimPlot(lcanSeuratObj, reduction = "pca")
 ```
 
+# Visualization DimHeatmap
 ```{r,  echo = T, warning=FALSE, message=FALSE, fig.height=15, fig.width=8}
 DimHeatmap(lcanSeuratObj, dims = 1:15, cells = 500, balanced = T)
 ```
-In this heatmap, we can see which features have maximum heterogeneity. Focussing on those genes in downstream process gives us a maximum sense of biological activity happening. Here we gave command to plot the 500 cells based on the PCA scores. The algorithm plots the readings with highest and lowest scores. We do see maximum of heterogeneity in PC2, PC3 and PC5; and minimum heterogeneity in PC13, PC14, and PC15.
 
+In this heatmap, we can see which features have maximum heterogeneity. Focussing on those genes in downstream process gives us a maximum sense of biological activity happening. Here we gave command to plot the 500 cells based on the PCA scores. The algorithm plots the readings with highest and lowest scores. We do see maximum of heterogeneity in PC2, PC3 and PC5; and minimum heterogeneity in PC13, PC14, and PC15.
 
 ```{r,  echo = T, warning=FALSE, message=FALSE}
 # DoHeatmap(
@@ -166,6 +172,7 @@ In this heatmap, we can see which features have maximum heterogeneity. Focussing
 # )
 ```
 
+# Elbow plot
 ```{r,  echo = T, warning=FALSE, message=FALSE}
 ElbowPlot(lcanSeuratObj)
 ```
@@ -173,52 +180,53 @@ ElbowPlot(lcanSeuratObj)
 This is an elbow plot. Here the the elbowing is seen at 6 which means that we can get most relevant heterogeneity in the first 6 PCAs and the rest are not worth investigating further. For this parameter, it is advisable to err on higher end as not doing so adversely affects the downstream results.
 
 # 7. Clustering
-
 ```{r,  echo = T, warning=FALSE, message=FALSE}
 lcanSeuratObj <- FindNeighbors(lcanSeuratObj, dims = 1:15)
 # View(lcanSeuratObj@meta.data)
-lcanSeuratObjclust <- FindClusters(lcanSeuratObj, resolution = c(0.1, 0.3, 0.5, 0.7, 1.0))
-View(lcanSeuratObjclust@meta.data)
+lcanSeuratObj <- FindClusters(lcanSeuratObj, resolution = c(0.1, 0.3, 0.5, 0.7, 1.0))
+#View(lcanSeuratObj@meta.data)
 
-DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.0.1", label = T)
+DimPlot(lcanSeuratObj, group.by = "RNA_snn_res.0.1", label = T)
 ```
 
 Here we see the similar cells clustering together. As the resolution increases, we get more clusters, and better defination of each cluster. 
 
+# Visualiztion Dimplot with resolution 0.3
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.0.3", label = T)
+DimPlot(lcanSeuratObj, group.by = "RNA_snn_res.0.3", label = T)
 ```
 
+# Visualization Dimplot with resolution 0.5
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.0.5", label = T)
+DimPlot(lcanSeuratObj, group.by = "RNA_snn_res.0.5", label = T)
 ```
 
+# Visualization Dimplot with resolution 0.7
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.0.7", label = T)
+DimPlot(lcanSeuratObj, group.by = "RNA_snn_res.0.7", label = T)
 ```
 
+# Visualization Dimplot with resolution 1
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-DimPlot(lcanSeuratObjclust, group.by = "RNA_snn_res.1", label = T)
+DimPlot(lcanSeuratObj, group.by = "RNA_snn_res.1", label = T)
 ```
 
-Setting Identity of clusters
-
-```{r,  echo = T, warning=FALSE, message=FALSE}
-Idents(lcanSeuratObjclust)
-Idents(lcanSeuratObjclust) <- "RNA_snn_res.0.1"
-# Idents(lcanSeuratObjclust)
+# Setting Identity of clusters
+```{r,  echo = F, warning=FALSE, message=FALSE}
+Idents(lcanSeuratObj)
+Idents(lcanSeuratObj) <- "RNA_snn_res.0.1"
+# Idents(lcanSeuratObj)
 ```
 
 # Non Linear Dimensionality Reduction
-
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-lcanSeuratObjclust <- RunUMAP(lcanSeuratObjclust, dims = 1:15)
-DimPlot(lcanSeuratObjclust, reduction = "umap")
+lcanSeuratObj <- RunUMAP(lcanSeuratObj, dims = 1:15)
+DimPlot(lcanSeuratObj, reduction = "umap")
 ```
 
 
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-# saveRDS(lcanSeuratObjclust, file = "../output/lungTumour-4CMO.rds")
+# saveRDS(lcanSeuratObj , file = "../output/lungTumour-4CMO.rds")
 ```
 
 
@@ -230,13 +238,13 @@ DimPlot(lcanSeuratObjclust, reduction = "umap")
 # Finding Differentially Expressed Features (Cluster Biomarkers)
 Finding all the markers of cluster 2:
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-cluster2.markers <- FindMarkers(lcanSeuratObjclust, ident.1 = 2, min.pct = 0.25)
+cluster2.markers <- FindMarkers(lcanSeuratObj, ident.1 = 2, min.pct = 0.25)
 head(cluster2.markers, n=5)
 ```
 
 Finding markers of every cluster compared to all remaining cells reporting only the positive ones. 
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-lcan.markers <- FindAllMarkers(lcanSeuratObjclust, only.pos = T, min.pct = 0.25, 
+lcan.markers <- FindAllMarkers(lcanSeuratObj, only.pos = T, min.pct = 0.25, 
                                logfc.threshold = 0.25)
 lcan.markers %>% 
   group_by(cluster) %>%
@@ -246,43 +254,51 @@ lcan.markers %>%
 
 
 ```{r,  echo = T, warning=FALSE, message=FALSE}
+cluster0.markers <- FindMarkers(lcanSeuratObj, ident.1 = 0, logfc.threshold = 0.25, test.use = "roc", only.pos = T)
 
+VlnPlot(lcanSeuratObj, features = c("ID3", "RPL22"))
+```
+
+This plot can be used to visualize particular genes of interest and it shows how it is expressed in all the clusters. Based on this plot, we can examine the individual clusters where these genes are expressed most for further testing. 
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+VlnPlot(lcanSeuratObj, features = c("ID3", "RPL22"), slot = "counts", log = T)
+```
+
+This is the actual raw count, before scaling and normalizing. 
+
+```{r,  echo = T, warning=FALSE, message=FALSE}
+FeaturePlot(lcanSeuratObj,features = c("IGHA1", "IGKC", "JCHAIN", "IGHG1", "IGHM",  "TPSAB1"))
 ```
 
 
 
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-
+lcan.markers %>%
+  group_by(cluster) %>%
+  top_n(n = 10, wt = avg_log2FC) -> top10
+DoHeatmap(lcanSeuratObj, features = top10$gene) + NoLegend()
 ```
 
 
 
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-
+# new.cluster.ids <- c("LUNG CANCER", "SQUAMOUS CELL CARCINOMA", "ADENOCARCINOMA", "NSCLC")
+# names(new.cluster.ids) <- levels(lcanSeuratObj)
+# lcanSeuratObj <- RenameIdents(lcanSeuratObj, new.cluster.ids)
+# DimPlot(lcanSeuratObj, reduction = "umap", label = T, pt.size = 0.5) + NoLegend()
 ```
 
 
 
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-
+# saveRDS(lcanSeuratObj, file = "../output/lungCancerFinal.rds")
 ```
 
 
 
 ```{r,  echo = T, warning=FALSE, message=FALSE}
-
-```
-
-
-
-```{r,  echo = T, warning=FALSE, message=FALSE}
-
-```
-
-
-
-```{r,  echo = T, warning=FALSE, message=FALSE}
-
+sessionInfo()
 ```
 
 
